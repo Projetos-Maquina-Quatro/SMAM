@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { conflito, naoEncontrado } from '../lib/http.js';
@@ -66,17 +67,22 @@ export default async function pacientesRoutes(app: FastifyInstance) {
   app.get('/', async (req) => {
     const { busca, pagina, porPagina, incluirInativos } = listaSchema.parse(req.query);
 
-    const where = {
+    // Os filtros por documento só entram quando o termo tem dígitos. Um
+    // sentinela como '\u0000' não serve: o Postgres rejeita byte nulo em texto
+    // e derruba a query inteira.
+    const digitos = busca ? somenteDigitos(busca) : '';
+    const filtros: Prisma.PacienteWhereInput[] = [];
+
+    if (busca) {
+      filtros.push({ nome: { contains: busca, mode: 'insensitive' } });
+      if (digitos) {
+        filtros.push({ cpf: { contains: digitos } }, { cartaoSus: { contains: digitos } });
+      }
+    }
+
+    const where: Prisma.PacienteWhereInput = {
       ...(incluirInativos ? {} : { ativo: true }),
-      ...(busca
-        ? {
-            OR: [
-              { nome: { contains: busca, mode: 'insensitive' as const } },
-              { cpf: { contains: somenteDigitos(busca) || '\u0000' } },
-              { cartaoSus: { contains: somenteDigitos(busca) || '\u0000' } },
-            ],
-          }
-        : {}),
+      ...(filtros.length ? { OR: filtros } : {}),
     };
 
     const [total, itens] = await Promise.all([
