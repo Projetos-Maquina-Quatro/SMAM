@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import { Prisma } from '@prisma/client';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
+import './lib/zod-ptbr.js';
 import { corsOrigins, env } from './lib/env.js';
 import { HttpError } from './lib/http.js';
 import { prisma } from './lib/prisma.js';
@@ -43,20 +44,9 @@ export async function criarApp() {
     credentials: true,
   });
 
-  await app.register(authPlugin);
-
-  app.get('/health', async () => {
-    await prisma.$queryRaw`SELECT 1`;
-    return { ok: true, servico: 'smam-api', hora: new Date().toISOString() };
-  });
-
-  await app.register(authRoutes, { prefix: '/auth' });
-  await app.register(pacientesRoutes, { prefix: '/pacientes' });
-  await app.register(especialidadesRoutes, { prefix: '/especialidades' });
-  await app.register(funcionariosRoutes, { prefix: '/funcionarios' });
-  await app.register(medicosRoutes, { prefix: '/medicos' });
-  await app.register(consultasRoutes, { prefix: '/consultas' });
-
+  // Os handlers de erro vêm ANTES do registro das rotas: cada plugin filho
+  // herda o handler vigente no momento em que é registrado, então definir
+  // isso depois deixaria as rotas com o handler padrão do Fastify.
   app.setErrorHandler((erro, req, reply) => {
     if (erro instanceof ZodError) {
       return reply.code(400).send({
@@ -81,6 +71,20 @@ export async function criarApp() {
   app.setNotFoundHandler((req, reply) => {
     reply.code(404).send({ erro: `Rota ${req.method} ${req.url} não existe.` });
   });
+
+  await app.register(authPlugin);
+
+  app.get('/health', async () => {
+    await prisma.$queryRaw`SELECT 1`;
+    return { ok: true, servico: 'smam-api', hora: new Date().toISOString() };
+  });
+
+  await app.register(authRoutes, { prefix: '/auth' });
+  await app.register(pacientesRoutes, { prefix: '/pacientes' });
+  await app.register(especialidadesRoutes, { prefix: '/especialidades' });
+  await app.register(funcionariosRoutes, { prefix: '/funcionarios' });
+  await app.register(medicosRoutes, { prefix: '/medicos' });
+  await app.register(consultasRoutes, { prefix: '/consultas' });
 
   return app;
 }
