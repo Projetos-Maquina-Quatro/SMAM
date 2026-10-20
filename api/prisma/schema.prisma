@@ -1,0 +1,161 @@
+// SMAM - Sistema Municipal de Atendimento Médico
+// Modelo derivado do BD_UBS.sql original (TCC 2013), modernizado:
+// datas como DateTime, enums no lugar de strings livres, soft delete via `ativo`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Papel {
+  ADMIN
+  ATENDENTE
+  MEDICO
+}
+
+enum Sexo {
+  MASCULINO
+  FEMININO
+  OUTRO
+}
+
+enum Prioridade {
+  NORMAL
+  PREFERENCIAL
+  URGENTE
+}
+
+enum StatusConsulta {
+  AGENDADA
+  CONCLUIDA
+  CANCELADA
+  FALTOU
+}
+
+/// Credencial de acesso. Substitui a tabela LOGINN do original,
+/// que guardava senha em texto puro.
+model Usuario {
+  id        Int      @id @default(autoincrement())
+  login     String   @unique
+  senhaHash String
+  papel     Papel    @default(ATENDENTE)
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now())
+
+  funcionario   Funcionario? @relation(fields: [funcionarioId], references: [id])
+  funcionarioId Int?         @unique
+
+  @@map("usuarios")
+}
+
+model Funcionario {
+  id        Int      @id @default(autoincrement())
+  nome      String
+  cpf       String   @unique
+  rg        String?
+  sexo      Sexo
+  dataNasc  DateTime @db.Date
+  cargo     String
+  endereco  String
+  numero    String
+  bairro    String
+  cidade    String
+  estado    String   @db.Char(2)
+  cep       String?
+  telefone1 String
+  telefone2 String?
+  email     String?
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now())
+
+  usuario Usuario?
+  medico  Medico?
+
+  @@index([nome])
+  @@map("funcionarios")
+}
+
+model Paciente {
+  id              Int      @id @default(autoincrement())
+  nome            String
+  cpf             String?  @unique
+  rg              String?
+  cartaoSus       String?  @unique
+  sexo            Sexo
+  dataNasc        DateTime @db.Date
+  nomeResponsavel String?
+  endereco        String
+  numero          String
+  bairro          String
+  cidade          String
+  estado          String   @db.Char(2)
+  cep             String?
+  telefone1       String
+  telefone2       String?
+  email           String?
+  observacoes     String?
+  ativo           Boolean  @default(true)
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  consultas Consulta[]
+
+  @@index([nome])
+  @@map("pacientes")
+}
+
+model Especialidade {
+  id    Int     @id @default(autoincrement())
+  nome  String  @unique
+  ativo Boolean @default(true)
+
+  medicos   Medico[]
+  consultas Consulta[]
+
+  @@map("especialidades")
+}
+
+model Medico {
+  id    Int     @id @default(autoincrement())
+  crm   String  @unique
+  ativo Boolean @default(true)
+
+  funcionario   Funcionario @relation(fields: [funcionarioId], references: [id])
+  funcionarioId Int         @unique
+
+  especialidade   Especialidade @relation(fields: [especialidadeId], references: [id])
+  especialidadeId Int
+
+  consultas Consulta[]
+
+  @@map("medicos")
+}
+
+model Consulta {
+  id          Int            @id @default(autoincrement())
+  dataHora    DateTime
+  prioridade  Prioridade     @default(NORMAL)
+  status      StatusConsulta @default(AGENDADA)
+  observacoes String?
+  criadoEm    DateTime       @default(now())
+
+  paciente   Paciente @relation(fields: [pacienteId], references: [id])
+  pacienteId Int
+
+  medico   Medico @relation(fields: [medicoId], references: [id])
+  medicoId Int
+
+  especialidade   Especialidade @relation(fields: [especialidadeId], references: [id])
+  especialidadeId Int
+
+  // O original usava `constraint uq_DataHora unique` na tabela toda, o que
+  // impedia duas consultas simultâneas em TODA a UBS. Aqui o horário é
+  // único por médico, que é a regra que realmente faz sentido.
+  @@unique([medicoId, dataHora])
+  @@index([dataHora])
+  @@map("consultas")
+}
